@@ -1,0 +1,384 @@
+\documentclass{beamer}
+\addtobeamertemplate{navigation symbols}{}{%
+    \usebeamerfont{footline}%
+    \usebeamercolor[fg]{footline}%
+    \hspace{1em}%
+    \insertframenumber
+}
+
+
+\usepackage[utf8]{inputenc}
+\usetheme{default}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\definecolor{mGreen}{rgb}{0,0.6,0}
+\definecolor{mGray}{rgb}{0.5,0.5,0.5}
+\definecolor{mPurple}{rgb}{0.58,0,0.82}
+\definecolor{backgroundColour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{CStyle}{
+    backgroundcolor=\color{backgroundColour},   
+    commentstyle=\color{mGreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{mGray},
+    stringstyle=\color{mPurple},
+    basicstyle=\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    language=C
+}
+ 
+ 
+\title{k-NN and range search with kd-trees}
+
+\author{Dominika Kubániová}
+
+\begin{document}
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}
+
+\begin{itemize}
+ \frametitle{kd-tree}
+ \item Binary tree
+ \item Data points $ \in \mathbb{R}^k $ (my case k is max 4)
+ \item Root wraps data into hyperrectange (cell)
+ \item Hyperrectangle iteratively splitted by orthogonal planes
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Non-optimized structures}
+   \begin{lstlisting}[style=CStyle]
+struct kd_node {
+  kd_node * left, * right;
+  byte split_dim;
+  float split_value;
+  bool is_leaf;
+  float * p;
+}
+\end{lstlisting}
+
+Note: Some implementations store points in nodes and leaves, some only in leaves
+
+\end{frame}
+
+
+\begin{frame}
+ \frametitle{Search problems}
+ \begin{itemize}
+  \item k-NN search
+  \item Range search (rectangular and spherical queries)
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Construction of a kd-tree}
+ \begin{lstlisting}[style=CStyle]
+fun construct_kdtree(dataset of size N in dimension k):
+    if dataset size < M:
+        return nullptr
+    kd_node * node
+    [split_dim, split_value] = choose_split()
+    // ...
+    data_left = {p from dataset | p[dim] < value}
+    data_left = {p from dataset | p[dim] > value}
+    node->left = construct_kdtree(data_left )
+    node->right = construct_kdtree(data_right)
+    return node
+ \end{lstlisting}
+\item Data should be sorted in every dimension
+
+
+\end{frame}
+
+\begin{frame}
+ \frametitle{How to choose splitting dimension?}
+ \begin{itemize}
+  \item Does not affect correctness of the algorithm
+  \item Can increase complexity of the search
+  \item Balanced tree
+  \item We want ratio of the longest to shortest side to be bounded
+  \item The number of visited leaves in search should be small
+  \item Bad dataset distribution can ruin everything
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}
+ \frametitle{Dimension with maximal variance}
+ \begin{itemize}
+  \item Splitting value = median
+  \item Pros:
+  \begin{itemize}
+   \item O(N) leaves and O(log N) depth
+   \item Probably every next chosen dimension will be different (not true when points have bad distribution)
+  \end{itemize}
+  
+  \item Cons:
+  \begin{itemize}
+   \item Unbounded side length ratio (median does not need to be in the middle of the hyperrectangle)
+  \end{itemize}
+
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}
+ \frametitle{Midpoint split}
+ \begin{itemize}
+  \item Splitting value = half of the longest side of the hyperrectangle
+  \item Balanced
+  \item Pros:
+  \begin{itemize}
+   \item Side length ratio bounded
+   \end{itemize}
+   
+   \item Cons:
+  \begin{itemize}
+   \item Possibly a lot of empty nodes
+   \end{itemize}
+   
+  
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}
+ \frametitle{Max variance and Midpoint}
+ \centering
+ \includegraphics[width=300pt]{domca_obraz.png}
+ Source [2]
+ 
+ Large number of leaves is visited in k-NN search!
+\end{frame}
+
+\begin{frame}
+ \frametitle{Sliding midpoint}
+ \begin{itemize}
+  \item First step as midpoint
+  \item If points lie on both sides of this split $\rightarrow$ continue
+  \item Else $\rightarrow$ slide towards the closest point creating one NON-EMPTY leaf from it
+  
+  \item Pros:
+  \begin{itemize}
+   \item O(N) leaves
+  \end{itemize}
+  \item Cons:
+  \begin{itemize}
+   \item What about its side length ratio? Is it balanced?
+  \end{itemize}
+ \end{itemize}
+ 
+\centering
+\includegraphics[width=100pt]{domca_obraz2.png}
+Source: [2]
+
+
+\end{frame}
+
+\begin{frame}
+ \frametitle{}
+ It is observed that the depth of the tree is not that dominant factor
+than the number of visited leaves.
+Example:
+\centering
+\includegraphics[width=300pt]{domca_obraz3.png}
+Source: [2]
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{k-NN search (with PQ)}
+ \begin{lstlisting}[style=CStyle]
+Point query
+float knn_dist = INF
+PQ kNNq
+PQ q
+
+fun process_leaf(n):
+	for p in n->points:
+		if (kNNq.size) < k:
+			kNNq.push(p)
+		else if dist(p, query) < knn_dist:
+			kNNq.push(p)
+			if kNNq.size() > k:
+				kNNq.pop_last()
+				knn_dist = dist(kNNq.last, query)
+ \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{k-NN search (with PQ) cont.}
+ \begin{lstlisting}[style=CStyle]
+q.push([root, 0.0])
+while !q.empty():
+	[n, dist] = q.pop()
+	if dis < knn_dist:
+		while (!n->is_leaf):
+			off_split_plane = query[n->split_dim] - n->split_value
+			if off_split_plane < 0:
+				off_box_boundary = query[n->split_dim] - n->bound
+				if off_box_boundary > 0:
+					off_box_boundary = 0
+				dist_right = dist - off_box_boundary^2 + off_split_plane^2
+				q.push([n->right, dist_right])
+				n = n->left
+			else:
+				// analogously
+		process_leaf(n)
+ \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Range search (spherical query)}
+ \begin{lstlisting}[style=CStyle]
+Point query
+float r_sq
+float offs[k] // initialized 0
+vector<Point> in_range
+stack s
+
+fun process_leaf(n):
+	for p in n->points:
+		if dist(p, query) < r_sq:
+			in_range.push(p)
+ \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Range search (spherical query) cont.}
+ \begin{lstlisting}[style=CStyle]
+s.push([root, dist, offs])
+while !s.empty():
+	[n, dist, off] = s.pop()
+	if n->is_leaf:
+		process_leaf(n)
+	else:
+		old_off_split_plane = off[n->dim]
+		new_off_split_plane = query[n->dim] - n->split_value
+		if new_off_split_plane < 0:
+			new_dist = dist - old_off_split_plane^2 + new_off_split_plane^2
+			if new_dist < r_sq:
+				new_off = off
+				new_off[n->dim] = new_off_split_plane
+		    	s.push([n->right, dist, new_off])
+			s.push([n->left, dist, off])
+		else:
+			// analogously
+ \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Range search (rectangular query)}
+  \begin{lstlisting}[style=CStyle]
+Point query
+float size[k] // only halves stored
+float offs[k] // initialized 0
+vector<Point> in_range
+stack s
+
+fun process_leaf(n):
+	for p in n->points:
+		dim = n->dim
+		for i in range(k):
+			if query[dim] - size[dim] < p[dim] < query[dim] + size[dim]
+				in_range.push(p)
+			else:
+				break
+ \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Range search (rectangular query) cont.}
+  \begin{lstlisting}[style=CStyle]
+s.push(root)
+while !s.empty():
+	n = s.pop()
+
+	if n->is_leaf:
+		process_leaf(n)
+	else:
+		if n->value < query[n->dim] - size[n->dim]:
+			s.push(n->right)
+
+		else if n->value > query[n->dim] + size[n->dim]:
+			s.push(n->left)
+
+		else:
+			s.push(n->left)
+			s.push(n->right)
+ \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{Optimized structures}
+    \begin{lstlisting}[style=CStyle]
+struct kd_node {
+    union {
+        kd_node * left;
+        float * p;
+    }
+    byte is_leaf_split_dim;
+    float split_value;
+}
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}
+ \frametitle{Other simple heuristics}
+ \begin{itemize}
+  \item Bounds-Overlap-Ball (BOB) test
+  
+  Effective when number of points stored in a leaf is high
+  
+  \centering
+  \includegraphics[width=130pt]{domca_obraz4.png}
+  
+  Source: [2]
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}
+ \frametitle{What next needs to be done}
+ \begin{itemize}
+  \item Dataset generation (various distributions) in 2D-4D
+  \item Dataset size: 10$^3$ – 10$^8$
+  \item Different implementation of priority queue
+  \item Comparison (mainly with naïve algorithm)
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+ \frametitle{References}
+ \begin{itemize}
+  \item 1 Moore, Andrew. (2004). An Intoductory Tutorial on Kd-Trees.
+  \item 2 Maneewongvatana, Songrit \& Mount, David. (2000). It's Okay to Be Skinny, If Your Friends Are Fat.
+  \item 3 Sample, Neal \& Haines, Matthew \& Arnold, Mark \& Purcell, Timothy. (2001). Optimizing Search Strategies in k-d Trees.
+ \end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\begin{center}
+        Thank you for your attention
+\end{center}
+\end{frame}
+
+\end{document}
