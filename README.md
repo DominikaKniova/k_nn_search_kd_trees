@@ -12,7 +12,6 @@ Detailed explanation of the implementation can be found in report or presentatio
 
 ## How to run
 ./project < inputs/<name of input file>
-for example ./project < inputs/input1_uniform.txt
 
 ## Example
 
