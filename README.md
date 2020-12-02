@@ -11,7 +11,7 @@ Detailed explanation of the implementation can be found in report or presentatio
 - Boost
 
 ## How to run
-./project < inputs/<name of input file>
+./project < inputs/< name of input file> 
 
 ## Example
 
